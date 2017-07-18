@@ -4,26 +4,27 @@ import java.sql.Connection;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.log4j.Logger;
+
 import com.google.gson.reflect.TypeToken;
 
 import stocktool.StockTool.EnterpriseCurrentInfo.EnterpriseCurrentData;
+import stocktool.StockTool.PlateInfo.PlateData;
 import util.DBHelper;
+import util.ExceptionUtil;
 import util.GsonUtil;
 import util.HttpUtil;
 import util.StringUtil;
 
 public class StockTool {
 
+	private static Logger LOGGER = Logger.getLogger(HttpUtil.class);
+
 	public static void main(String[] args) {
-		String code = "sz000651";
-		// EnterpriseInfo enterpriseInfo = getEnterpriseInfo(code);
-		// PlateInfo plateInfo = getPlateInfo(code);
-		// HistoryInfo historyInfo = getHistoryOfDayInfo(code, 10);
-		// System.out.println("finished");
-		// backupAllStockEnterpriseInfo();
+		synchronizeAllStockInfo();
 	}
-	
-	private static void backupAllStockEnterpriseInfo() {
+
+	private static void synchronizeAllStockInfo() {
 		try {
 			List<Map<String, Object>> stocklist = getStockList();
 
@@ -32,56 +33,98 @@ public class StockTool {
 			String code = null;
 			for (Map<String, Object> stock : stocklist) {
 				code = String.valueOf(stock.get("code"));
-				EnterpriseInfo enterpriseInfo = getEnterpriseInfo(code);
-				if (enterpriseInfo != null) {
-					String sql = "INSERT INTO `stock`.`enterprise_info` (`code`,`ssdq`, `zgb`, `mgsy`, `sssj`, `ltga`, `mgjzc`, `mgxjl`, `jzcsyl`, `jlrzzl`, `mgwfplr`, `zysrzzl`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, ?);";
-					String[] params = { code, enterpriseInfo.data.ssdq, enterpriseInfo.data.zgb,
-							enterpriseInfo.data.mgsy, enterpriseInfo.data.sssj, enterpriseInfo.data.ltga,
-							enterpriseInfo.data.mgjzc, enterpriseInfo.data.mgxjl, enterpriseInfo.data.jzcsyl,
-							enterpriseInfo.data.jlrzzl, enterpriseInfo.data.mgwfplr, enterpriseInfo.data.zysrzzl };
-					DBHelper.excuteUpdate(conn, sql, params);
-					System.out.println(code + " backup success.");
-					Thread.sleep(500);
-				} else {
-					String sql = "UPDATE `stock`.`stock_list` SET status = '0' WHERE code = ?";
-					DBHelper.excuteUpdate(conn, sql, new String[] { code });
-					Thread.sleep(200);
-				}
+
+				// synchronizeStockEnterpriseInfo(conn, code);
+				synchronizeStockRealtimeInfo(conn, code);
+				// synchronizeStockPlate(conn, code);
 			}
 			conn.close();
 		} catch (Exception e) {
-			e.printStackTrace();
+			ExceptionUtil.propagate(LOGGER, e);
 		}
 	}
 
-	private static void synchronizeAllStockEnterpriseInfo() {
+	private static void synchronizeStockEnterpriseInfo(Connection conn, String code) {
 		try {
-			List<Map<String, Object>> stocklist = getStockList();
-
-			Connection conn = DBHelper.getConn();
-
-			String code = null;
-			for (Map<String, Object> stock : stocklist) {
-				code = String.valueOf(stock.get("code"));
-				EnterpriseCurrentInfo enterpriseCurrentInfo = getEnterpriseCurrentInfo(code);
-				if (enterpriseCurrentInfo != null) {
-					String sql = "UPDATE `stock`.`enterprise_info` (`syl`) VALUES (?) WHERE code = ?";
-					EnterpriseCurrentData enterpriseCurrentData=enterpriseCurrentInfo.data.get(code) ;
-					Object[] enterpriseData=enterpriseCurrentData.qt.get(code);
-					String status=String.valueOf(enterpriseData[40]);
-					String[] params = { status};
-					DBHelper.excuteUpdate(conn, sql, params);
-					System.out.println(code + " backup success.");
-					Thread.sleep(500);
-				} else {
-					String sql = "UPDATE `stock`.`stock_list` SET status = '0' WHERE code = ?";
-					DBHelper.excuteUpdate(conn, sql, new String[] { code });
-					Thread.sleep(200);
-				}
+			EnterpriseInfo enterpriseInfo = getEnterpriseInfo(code);
+			if (enterpriseInfo != null) {
+				String sql = "UPDATE `stock`.`enterprise_info` SET `ssdq`= ?, `zgb`= ?, `mgsy`= ?, `sssj`= ?, `ltga`= ?, `mgjzc`= ?, `mgxjl`= ?, `jzcsyl`= ?, `jlrzzl`= ?, `mgwfplr`= ?, `zysrzzl`= ?, `syl`= ? WHERE `stock_code`= ?";
+				String[] params = { enterpriseInfo.data.ssdq, enterpriseInfo.data.zgb, enterpriseInfo.data.mgsy,
+						enterpriseInfo.data.sssj, enterpriseInfo.data.ltga, enterpriseInfo.data.mgjzc,
+						enterpriseInfo.data.mgxjl, enterpriseInfo.data.jzcsyl, enterpriseInfo.data.jlrzzl,
+						enterpriseInfo.data.mgwfplr, enterpriseInfo.data.zysrzzl, code };
+				DBHelper.excuteUpdate(conn, sql, params);
+				LOGGER.info(code + " synchronize stockEnterpriseInfo success.");
+				Thread.sleep(500);
 			}
-			conn.close();
 		} catch (Exception e) {
-			e.printStackTrace();
+			ExceptionUtil.propagate(LOGGER, e);
+		}
+	}
+
+	private static void initStockEnterpriseInfo(Connection conn, String code) {
+		try {
+			EnterpriseInfo enterpriseInfo = getEnterpriseInfo(code);
+			if (enterpriseInfo != null) {
+				String sql = "INSERT INTO `stock`.`enterprise_info` (`stock_code`,`ssdq`, `zgb`, `mgsy`, `sssj`, `ltga`, `mgjzc`, `mgxjl`, `jzcsyl`, `jlrzzl`, `mgwfplr`, `zysrzzl`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, ?)";
+				String[] params = { code, enterpriseInfo.data.ssdq, enterpriseInfo.data.zgb, enterpriseInfo.data.mgsy,
+						enterpriseInfo.data.sssj, enterpriseInfo.data.ltga, enterpriseInfo.data.mgjzc,
+						enterpriseInfo.data.mgxjl, enterpriseInfo.data.jzcsyl, enterpriseInfo.data.jlrzzl,
+						enterpriseInfo.data.mgwfplr, enterpriseInfo.data.zysrzzl };
+				DBHelper.excuteUpdate(conn, sql, params);
+				LOGGER.info(code + " init stockEnterpriseInfo success.");
+				Thread.sleep(500);
+			} else {
+				String sql = "UPDATE `stock`.`stock_list` SET status = '0' WHERE code = ?";
+				DBHelper.excuteUpdate(conn, sql, new String[] { code });
+				Thread.sleep(200);
+			}
+		} catch (Exception e) {
+			ExceptionUtil.propagate(LOGGER, e);
+		}
+	}
+
+	private static void synchronizeStockPlate(Connection conn, String code) {
+		try {
+			PlateInfo plateInfo = getPlateInfo(code);
+			if (plateInfo != null) {
+				for (PlateData data : plateInfo.data) {
+					String sql = "INSERT INTO `stock`.`stock_plate` (`stock_code`,`plate_name`, `plate_code`) VALUES (?, ?, ?)";
+					String[] params = { code, data.name, data.code };
+					DBHelper.excuteUpdate(conn, sql, params);
+				}
+				LOGGER.info(code + " synchronize stockPlate success.");
+				Thread.sleep(500);
+			}
+		} catch (Exception e) {
+			ExceptionUtil.propagate(LOGGER, e);
+		}
+	}
+
+	private static void synchronizeStockRealtimeInfo(Connection conn, String code) {
+		try {
+			EnterpriseCurrentInfo enterpriseCurrentInfo = getEnterpriseCurrentInfo(code);
+			if (enterpriseCurrentInfo != null) {
+				String sql = "UPDATE `stock`.`stock_list` SET `status` = ? WHERE code = ?";
+				EnterpriseCurrentData enterpriseCurrentData = enterpriseCurrentInfo.data.get(code);
+				Object[] enterpriseData = enterpriseCurrentData.qt.get(code);
+				String status = String.valueOf(enterpriseData[40]).trim();
+				StockStatus stockStatus = StockStatus.fromValue(status);
+
+				if (stockStatus != StockStatus.NORMAL) {
+					String[] params = { stockStatus.code, code };
+					DBHelper.excuteUpdate(conn, sql, params);
+				} else {
+					String sql2 = "UPDATE `stock`.`enterprise_info` SET `syl` = ? WHERE stock_code = ?";
+					String[] params2 = { String.valueOf(enterpriseData[39]), code };
+					DBHelper.excuteUpdate(conn, sql2, params2);
+				}
+
+				LOGGER.info(code + " synchronize stockRealtimeInfo success.");
+				Thread.sleep(500);
+			}
+		} catch (Exception e) {
+			ExceptionUtil.propagate(LOGGER, e);
 		}
 	}
 
@@ -143,6 +186,17 @@ public class StockTool {
 	}
 
 	private static PlateInfo getPlateInfo(String stockCode) {
+		String content = HttpUtil.get("http://web.ifzq.gtimg.cn/stock/relate/data/plate?code=" + stockCode, null, 5000,
+				5000, "GBK");
+		if (!StringUtil.isEmpty(content)) {
+			PlateInfo plateInfo = GsonUtil.getEntityFromJson(content, new TypeToken<PlateInfo>() {
+			});
+			return plateInfo;
+		}
+		return null;
+	}
+
+	private static PlateInfo getStockRealTimeInfo(String stockCode) {
 		String content = HttpUtil.get("http://web.ifzq.gtimg.cn/stock/relate/data/plate?code=" + stockCode, null, 5000,
 				5000, "GBK");
 		if (!StringUtil.isEmpty(content)) {
@@ -225,6 +279,44 @@ public class StockTool {
 		public String code;
 		public String msg;
 		public Object data;
+	}
+
+	static enum StockStatus {
+		NORMAL("1", ""), STOP("2", "S"), EXIT("3", "D");
+
+		private StockStatus(String code, String value) {
+			this.code = code;
+			this.value = value;
+		}
+
+		private String code;
+		private String value;
+
+		public String getCode() {
+			return code;
+		}
+
+		public String getValue() {
+			return value;
+		}
+
+		public static StockStatus fromCode(String code) {
+			for (StockStatus entity : StockStatus.values()) {
+				if (entity.getCode().equals(code)) {
+					return entity;
+				}
+			}
+			return NORMAL;
+		}
+
+		public static StockStatus fromValue(String value) {
+			for (StockStatus entity : StockStatus.values()) {
+				if (entity.getValue().equals(value)) {
+					return entity;
+				}
+			}
+			return NORMAL;
+		}
 	}
 
 }
